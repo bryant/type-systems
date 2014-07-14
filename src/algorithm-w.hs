@@ -20,13 +20,11 @@ data InfCtx = InfCtx { assumps :: [(Ident, PolyType)], id_gen :: TVarID }
     deriving Show
 type IDGen = State.State TVarID
 
-each = flip map
-
 -- (s1 `compose` s0) `s` tvar = s1 `s` (s0 `s` tvar)
 compose :: Substs -> Substs -> Substs
 compose s1 s0 = merge s0 s1'
     where
-    s1' = each s1 $ \(x, y) -> (x, subst s0 y)
+    s1' = flip map s1 $ \(x, y) -> (x, subst s0 y)
     merge = List.unionBy $ \x y -> fst x == fst y
 
 class HasFree t where
