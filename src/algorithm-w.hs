@@ -15,7 +15,8 @@ data Type =
 data PolyType = ForAll [TVarID] Type deriving Show
 
 type Substs = [(TVarID, Type)]
-type Context = [(Ident, PolyType)]
+type VarTypeMap = (Ident, PolyType)
+type Context = [VarTypeMap]
 data InfCtx = InfCtx { assumps :: [(Ident, PolyType)], id_gen :: TVarID }
     deriving Show
 type IDGen = State.State TVarID
@@ -50,6 +51,16 @@ instance HasFree PolyType where
         where
         qvars' = qvars List.\\ map fst subs
         mono' = subst subs mono
+
+instance HasFree n => HasFree (a, n) where
+    free_var = free_var . snd
+    subst subs (var, forall) = (var, subst subs forall)
+
+-- makes Context an instance of HasFree
+instance HasFree n => HasFree [n] where
+    -- left fold carries implicit nub
+    free_var = List.foldl' List.union [] . map free_var
+    subst s = map $ subst s
 
 new_var :: IDGen TVarID
 new_var = do
