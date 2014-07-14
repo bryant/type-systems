@@ -83,16 +83,48 @@ unify t t'
     | t == t' = []
     | otherwise = error $ "cannot unify " ++ show t ++ " with " ++ show t'
 
-infer :: Context -> Expr -> IDGen PolyType
+infer :: Context -> Expr -> IDGen (Substs, Type)
 infer ctx (Var binding) = case List.lookup binding ctx of
-    Just ty -> inst ty
+    Just (ForAll qvars monotype) -> do
+        subs <- flip mapM qvars $ \qid -> do
+            n <- new_var
+            return (qid, TypeVar n)
+        return ([], subst subs monotype)
     Nothing -> error $ "unknown variable: " ++ show binding
-    where
-    inst :: PolyType -> IDGen PolyType
-    inst (ForAll qvars mono) = do
-        newvars <- mapM (const new_var) qvars
-        let subs = zipWith (\q v -> (q, TypeVar v)) qvars newvars
-        return . ForAll newvars $ subst subs mono
-infer ctx (App e0 e1) = undefined
-infer ctx (Abs bind e1) = undefined
-infer ctx (Let bind e0 e1) = undefined
+
+-- \x -> id x ==> Abs "x" (App (Var "id") (Var "x"))
+-- infer {} Abs "x" (App (Var "id") (Var "x"))
+-- >>> infer {x: forall. 1} (App (Var "id") (Var "x"))
+-- >>> >>> infer {x: forall. 1} (Var "id")
+-- >>> >>> >>> forall. 2 -> 2
+-- >>> >>> unify (2 -> 2) (1 -> 3)
+-- >>> >>> >>> unify 2 1
+-- >>> >>> >>> >>> {1 ~ 2}
+-- >>> >>> >>> unify 2 3
+-- >>> >>> >>> >>> {3 ~ 2}
+-- >>> >>> >>> {3 ~ 2, 1 ~ 2}
+-- >>> >>> k
+infer ctx (App e0 e1) = do
+    (s0, fntype) <- infer ctx e0
+    (s1, argtype) <- infer (subst s0 ctx) e1
+    rettype <- TypeVar `fmap` new_var
+    let s2 = unify (subst s1 fntype) $ FuncType argtype rettype
+    return (s2 `compose` s1 `compose` s0, subst s2 rettype)
+
+-- let id = \x -> x in id :: forall 1. 1 -> 1
+-- let const = \x -> \y -> x in const :: forall 1 2. 1
+-- Let "const" (Abs "x" (Abs "y" (Var "x"))) (Var "const")
+infer ctx (Abs bind e) = do
+    n <- TypeVar `fmap` new_var
+    -- List.union simulates name shadowing
+    (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
+    return (s, FuncType (subst s n) t)
+
+infer ctx (Let bind e0 e1) = do
+    n <- TypeVar `fmap` new_var
+    (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
+    let s1 = unify t0 $ subst s0 n
+    let ctx' = subst (s1 `compose` s0) ctx
+    let fv = free_var (subst s1 t0) List.\\ free_var ctx'
+    (s2, t2) <- flip infer e1 $ [(bind, ForAll fv $ subst s1 t0)] `left_merge` ctx'
+    return (s2 `compose` s1 `compose` s0, t2)
