@@ -128,3 +128,14 @@ infer ctx (Let bind e0 e1) = do
     let fv = free_var (subst s1 t0) List.\\ free_var ctx'
     (s2, t2) <- flip infer e1 $ [(bind, ForAll fv $ subst s1 t0)] `left_merge` ctx'
     return (s2 `compose` s1 `compose` s0, t2)
+
+-- The rules of Algorithm W proper (implemented in `infer`) are technically
+-- more stringent than the original set of Hindley-Milner (HM) rules. For
+-- instance, HM would type `\x -> x` to be typed `forall a. a -> a`, while W
+-- would be stuck at the monotype `forall. a -> a`, which technically makes no
+-- sense at the top level.
+w :: Context -> Expr -> IDGen (Substs, PolyType)
+w ctx expr = do
+    (s, t) <- infer ctx expr
+    let fv = free_var t List.\\ free_var (subst s ctx)
+    return (s, ForAll fv t)
