@@ -116,7 +116,7 @@ infer ctx (App e0 e1) = do
 -- Let "const" (Abs "x" (Abs "y" (Var "x"))) (Var "const")
 infer ctx (Abs bind e) = do
     n <- TypeVar `fmap` new_var
-    -- List.union simulates name shadowing
+    -- left_merge simulates name shadowing
     (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
     return (s, FuncType (subst s n) t)
 
