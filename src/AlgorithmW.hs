@@ -95,35 +95,17 @@ infer ctx (Var binding) = case List.lookup binding ctx of
             return (qid, TypeVar n)
         return ([], subst subs monotype)
     Nothing -> error $ "unknown variable: " ++ show binding
-
--- \x -> id x ==> Abs "x" (App (Var "id") (Var "x"))
--- infer {} Abs "x" (App (Var "id") (Var "x"))
--- >>> infer {x: forall. 1} (App (Var "id") (Var "x"))
--- >>> >>> infer {x: forall. 1} (Var "id")
--- >>> >>> >>> forall. 2 -> 2
--- >>> >>> unify (2 -> 2) (1 -> 3)
--- >>> >>> >>> unify 2 1
--- >>> >>> >>> >>> {1 ~ 2}
--- >>> >>> >>> unify 2 3
--- >>> >>> >>> >>> {3 ~ 2}
--- >>> >>> >>> {3 ~ 2, 1 ~ 2}
--- >>> >>> k
 infer ctx (App e0 e1) = do
     (s0, fntype) <- infer ctx e0
     (s1, argtype) <- infer (subst s0 ctx) e1
     rettype <- TypeVar `fmap` new_var
     let s2 = unify (subst s1 fntype) $ FuncType argtype rettype
     return (s2 `compose` s1 `compose` s0, subst s2 rettype)
-
--- let id = \x -> x in id :: forall 1. 1 -> 1
--- let const = \x -> \y -> x in const :: forall 1 2. 1
--- Let "const" (Abs "x" (Abs "y" (Var "x"))) (Var "const")
 infer ctx (Abs bind e) = do
     n <- TypeVar `fmap` new_var
     -- left_merge simulates name shadowing
     (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
     return (s, FuncType (subst s n) t)
-
 infer ctx (Let bind e0 e1) = do
     n <- TypeVar `fmap` new_var
     (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
