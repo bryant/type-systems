@@ -83,6 +83,10 @@ unify t t'
     | t == t' = []
     | otherwise = error $ "cannot unify " ++ show t ++ " with " ++ show t'
 
+gen_over :: Type -> Context -> PolyType
+gen_over ty ctx = ForAll free ty
+    where free = free_var ty List.\\ free_var ctx
+
 infer :: Context -> Expr -> IDGen (Substs, Type)
 infer ctx (Var binding) = case List.lookup binding ctx of
     Just (ForAll qvars monotype) -> do
@@ -124,9 +128,9 @@ infer ctx (Let bind e0 e1) = do
     n <- TypeVar `fmap` new_var
     (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
     let s1 = unify t0 $ subst s0 n
-    let ctx' = subst (s1 `compose` s0) ctx
-    let fv = free_var (subst s1 t0) List.\\ free_var ctx'
-    (s2, t2) <- flip infer e1 $ [(bind, ForAll fv $ subst s1 t0)] `left_merge` ctx'
+    let ctx' = subst s1 $ subst s0 ctx
+    let sigma = subst s1 t0 `gen_over` ctx'
+    (s2, t2) <- flip infer e1 $ [(bind, sigma)] `left_merge` ctx'
     return (s2 `compose` s1 `compose` s0, t2)
 
 -- The rules of Algorithm W proper (implemented in `infer`) are technically
@@ -137,5 +141,4 @@ infer ctx (Let bind e0 e1) = do
 w :: Context -> Expr -> IDGen (Substs, PolyType)
 w ctx expr = do
     (s, t) <- infer ctx expr
-    let fv = free_var t List.\\ free_var (subst s ctx)
-    return (s, ForAll fv t)
+    return (s, t `gen_over` subst s ctx)
