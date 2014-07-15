@@ -70,12 +70,12 @@ new_var = do
     return vid
 
 unify :: Type -> Type -> Substs
-unify (TypeVar vid) u = unify u $ TypeVar vid
 unify u (TypeVar vid)
     | u == TypeVar vid = []
     | vid `elem` free_var u = error $ "occurs check: " ++ show vid ++
                                       "occurs in " ++ show u
     | otherwise = [(vid, u)]
+unify (TypeVar vid) u = unify u $ TypeVar vid
 unify (FuncType t0 t1) (FuncType t0' t1') = s1 `compose` s0
     where (s0, s1) = (unify t0 t0', unify (subst s0 t1) (subst s0 t1'))
 unify (ListType t) (ListType t') = unify t t'
