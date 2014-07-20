@@ -1,5 +1,7 @@
 import qualified Data.List as List
 import qualified Control.Monad.State as State
+import qualified Control.Monad.Except as Except
+import Control.Monad (liftM)
 
 type Ident = String
 type TVarID = Int
@@ -17,9 +19,8 @@ data PolyType = ForAll [TVarID] Type deriving Show
 type Substs = [(TVarID, Type)]
 type VarTypeMap = (Ident, PolyType)
 type Context = [VarTypeMap]
-data InfCtx = InfCtx { assumps :: [(Ident, PolyType)], id_gen :: TVarID }
-    deriving Show
-type IDGen = State.State TVarID
+
+type TypeInfT m = Except.ExceptT String (State.StateT TVarID m)
 
 left_merge :: Eq a => [(a, b)] -> [(a, b)] -> [(a, b)]
 left_merge = List.unionBy $ \x y -> fst x == fst y
@@ -63,53 +64,56 @@ instance HasFree n => HasFree [n] where
     free_var = List.foldl' List.union [] . map free_var
     subst s = map $ subst s
 
-new_var :: IDGen TVarID
+new_var :: Monad m => TypeInfT m TVarID
 new_var = do
     vid <- State.get
     State.modify (+1)
     return vid
 
-unify :: Type -> Type -> Substs
+unify :: Monad m => Type -> Type -> TypeInfT m Substs
 unify u (TypeVar vid)
-    | u == TypeVar vid = []
-    | vid `elem` free_var u = error $ "occurs check: " ++ show vid ++
-                                      "occurs in " ++ show u
-    | otherwise = [(vid, u)]
+    | u == TypeVar vid = return []
+    | vid `elem` free_var u = Except.throwError $
+        "occurs check: " ++ show vid ++ "occurs in " ++ show u
+    | otherwise = return [(vid, u)]
 unify (TypeVar vid) u = unify u $ TypeVar vid
-unify (FuncType t0 t1) (FuncType t0' t1') = s1 `compose` s0
-    where (s0, s1) = (unify t0 t0', unify (subst s0 t1) (subst s0 t1'))
+unify (FuncType t0 t1) (FuncType t0' t1') = do
+    s0 <- unify t0 t0'
+    s1 <- unify (subst s0 t1) (subst s0 t1')
+    return $ s1 `compose` s0
 unify (ListType t) (ListType t') = unify t t'
 unify t t'
-    | t == t' = []
-    | otherwise = error $ "cannot unify " ++ show t ++ " with " ++ show t'
+    | t == t' = return []
+    | otherwise = Except.throwError $
+        "cannot unify " ++ show t ++ " with " ++ show t'
 
 gen_over :: Type -> Context -> PolyType
 gen_over ty ctx = ForAll free ty
     where free = free_var ty List.\\ free_var ctx
 
-infer :: Context -> Expr -> IDGen (Substs, Type)
+infer :: Monad m => Context -> Expr -> TypeInfT m (Substs, Type)
 infer ctx (Var binding) = case List.lookup binding ctx of
     Just (ForAll qvars monotype) -> do
         subs <- flip mapM qvars $ \qid -> do
             n <- new_var
             return (qid, TypeVar n)
         return ([], subst subs monotype)
-    Nothing -> error $ "unknown variable: " ++ show binding
+    Nothing -> Except.throwError $ "unknown variable: " ++ show binding
 infer ctx (App e0 e1) = do
     (s0, fntype) <- infer ctx e0
     (s1, argtype) <- infer (subst s0 ctx) e1
-    rettype <- TypeVar `fmap` new_var
-    let s2 = unify (subst s1 fntype) $ FuncType argtype rettype
+    rettype <- TypeVar `liftM` new_var
+    s2 <- unify (subst s1 fntype) $ FuncType argtype rettype
     return (s2 `compose` s1 `compose` s0, subst s2 rettype)
 infer ctx (Abs bind e) = do
-    n <- TypeVar `fmap` new_var
+    n <- TypeVar `liftM` new_var
     -- left_merge simulates name shadowing
     (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
     return (s, FuncType (subst s n) t)
 infer ctx (Let bind e0 e1) = do
-    n <- TypeVar `fmap` new_var
+    n <- TypeVar `liftM` new_var
     (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
-    let s1 = unify t0 $ subst s0 n
+    s1 <- unify t0 $ subst s0 n
     let ctx' = subst s1 $ subst s0 ctx
     let sigma = subst s1 t0 `gen_over` ctx'
     (s2, t2) <- flip infer e1 $ [(bind, sigma)] `left_merge` ctx'
@@ -120,7 +124,7 @@ infer ctx (Let bind e0 e1) = do
 -- instance, HM would type `\x -> x` to be typed `forall a. a -> a`, while W
 -- would be stuck at the monotype `forall. a -> a`, which technically makes no
 -- sense at the top level.
-w :: Context -> Expr -> IDGen (Substs, PolyType)
+w :: Monad m => Context -> Expr -> TypeInfT m (Substs, PolyType)
 w ctx expr = do
     (s, t) <- infer ctx expr
     return (s, t `gen_over` subst s ctx)
