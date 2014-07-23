@@ -1,7 +1,11 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 import qualified Data.List as List
 import qualified Control.Monad.State as State
 import qualified Control.Monad.Except as Except
+import qualified Control.Monad.Trans as Trans
 import Control.Monad (liftM)
+import Control.Applicative (Applicative)
 
 type Ident = String
 type TVarID = Int
@@ -20,7 +24,16 @@ type Substs = [(TVarID, Type)]
 type VarTypeMap = (Ident, PolyType)
 type Context = [VarTypeMap]
 
-type TypeInfT m = Except.ExceptT String (State.StateT TVarID m)
+newtype TypeInfT m a = TypeInfT
+    { unTypeInfT :: Except.ExceptT String (State.StateT TVarID m) a }
+    deriving (Functor, Applicative, Monad, Except.MonadError String,
+              State.MonadState TVarID)
+
+instance Trans.MonadTrans TypeInfT where
+    lift = TypeInfT . Trans.lift . Trans.lift
+
+runTypeInfT :: TypeInfT m a -> TVarID -> m (Either String a, TVarID)
+runTypeInfT tf tvid = State.runStateT (Except.runExceptT $ unTypeInfT tf) tvid
 
 left_merge :: Eq a => [(a, b)] -> [(a, b)] -> [(a, b)]
 left_merge = List.unionBy $ \x y -> fst x == fst y
