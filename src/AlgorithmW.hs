@@ -40,8 +40,8 @@ left_merge = List.unionBy $ \x y -> fst x == fst y
 
 -- (s1 `compose` s0) `s` tvar = s1 `s` (s0 `s` tvar)
 compose :: Substs -> Substs -> Substs
-compose s1 s0 = left_merge s0 s1'
-    where s1' = flip map s1 $ \(x, y) -> (x, subst s0 y)
+compose s1 s0 = left_merge s0' s1
+    where s0' = flip map s0 $ \(x, y) -> (x, subst s1 y)
 
 class HasFree t where
     free_var :: t -> [TVarID]
