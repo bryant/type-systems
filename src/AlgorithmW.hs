@@ -77,11 +77,11 @@ instance HasFree n => HasFree [n] where
     free_var = List.foldl' List.union [] . map free_var
     subst s = map $ subst s
 
-new_var :: Monad m => TypeInfT m TVarID
+new_var :: Monad m => TypeInfT m Type
 new_var = do
     vid <- State.get
     State.modify (+1)
-    return vid
+    return $ TypeVar vid
 
 unify :: Monad m => Type -> Type -> TypeInfT m Substs
 unify u (TypeVar vid)
@@ -109,22 +109,22 @@ infer ctx (Var binding) = case List.lookup binding ctx of
     Just (ForAll qvars monotype) -> do
         subs <- flip mapM qvars $ \qid -> do
             n <- new_var
-            return (qid, TypeVar n)
+            return (qid, n)
         return ([], subst subs monotype)
     Nothing -> Except.throwError $ "unknown variable: " ++ show binding
 infer ctx (App e0 e1) = do
     (s0, fntype) <- infer ctx e0
     (s1, argtype) <- infer (subst s0 ctx) e1
-    rettype <- TypeVar `liftM` new_var
+    rettype <- new_var
     s2 <- unify (subst s1 fntype) $ FuncType argtype rettype
     return (s2 `compose` s1 `compose` s0, subst s2 rettype)
 infer ctx (Abs bind e) = do
-    n <- TypeVar `liftM` new_var
+    n <- new_var
     -- left_merge simulates name shadowing
     (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
     return (s, FuncType (subst s n) t)
 infer ctx (Let bind e0 e1) = do
-    n <- TypeVar `liftM` new_var
+    n <- new_var
     (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
     s1 <- unify t0 $ subst s0 n
     let ctx' = subst s1 $ subst s0 ctx
