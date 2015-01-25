@@ -126,11 +126,10 @@ infer ctx (Abs bind e) = do
 infer ctx (Let bind e0 e1) = do
     n <- new_var
     (s0, t0) <- flip infer e0 $ [(bind, ForAll [] n)] `left_merge` ctx
-    s1 <- unify t0 $ subst s0 n
-    let ctx' = subst s1 $ subst s0 ctx
-    let sigma = subst s1 t0 `gen_over` ctx'
+    let ctx' = subst s0 ctx
+    let sigma = t0 `gen_over` ctx'
     (s2, t2) <- flip infer e1 $ [(bind, sigma)] `left_merge` ctx'
-    return (s2 `compose` s1 `compose` s0, t2)
+    return (s2 `compose` s0, t2)
 
 -- The rules of Algorithm W proper (implemented in `infer`) are technically
 -- more stringent than the original set of Hindley-Milner (HM) rules. For
