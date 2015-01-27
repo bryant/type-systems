@@ -124,7 +124,7 @@ infer ctx (Abs bind e) = do
     (s, t) <- flip infer e $ [(bind, ForAll [] n)] `left_merge` ctx
     return (s, FuncType (subst s n) t)
 infer ctx (Let bind e0 e1) = do
-    (s0, t0) <- flip infer e0 ctx
+    (s0, t0) <- infer ctx e0
     let ctx' = subst s0 ctx
     let sigma = t0 `gen_over` ctx'
     (s2, t2) <- flip infer e1 $ [(bind, sigma)] `left_merge` ctx'
